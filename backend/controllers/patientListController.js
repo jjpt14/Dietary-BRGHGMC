@@ -39,3 +39,46 @@ exports.servePatient = async (req, res) => {
     res.status(500).json({ error: "Failed to save: " + err.message });
   }
 };
+
+const MEAL_SCHEDULE = {
+  Breakfast: { start: "06:00", end: "08:00" },
+  Lunch:     { start: "11:00", end: "13:00" },
+  Dinner:    { start: "17:00", end: "19:00" }
+};
+
+const getDeliveryStatus = (mealType) => {
+  const now = new Date();
+  const currentTime = now.getHours() * 100 + now.getMinutes();
+  
+  const [startH, startM] = MEAL_SCHEDULE[mealType].start.split(':').map(Number);
+  const [endH, endM] = MEAL_SCHEDULE[mealType].end.split(':').map(Number);
+  
+  const startTime = startH * 100 + startM;
+  const endTime = endH * 100 + endM;
+
+  return (currentTime <= endTime) ? 'On Time' : 'Late';
+};
+
+exports.servePatient = async (req, res) => {
+  const { hospitalNumber, mealType } = req.body;
+  
+  try {
+    // Determine if it's late based on the schedule
+    const deliveryStatus = getDeliveryStatus(mealType);
+
+    await pool.query(
+      `INSERT INTO meal_logs 
+       (hospital_number, meal_type, serve_time, status, delivery_remark) 
+       VALUES ($1, $2, NOW(), $3, $4)`,
+      [hospitalNumber, mealType, 'Served', deliveryStatus]
+    );
+
+    res.status(200).json({ 
+      message: "Successfully recorded", 
+      remark: deliveryStatus 
+    });
+  } catch (err) {
+    console.error("Save Error:", err.message);
+    res.status(500).json({ error: "Failed to save" });
+  }
+};
