@@ -1,0 +1,26 @@
+{
+  "name": "dietary-brghgmc",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "backend": "cd backend && npm run dev",
+    "frontend": "cd frontend && npm start",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jjpt14/Dietary-BRGHGMC.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jjpt14/Dietary-BRGHGMC/issues"
+  },
+  "homepage": "https://github.com/jjpt14/Dietary-BRGHGMC#readme",
+  "dependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
