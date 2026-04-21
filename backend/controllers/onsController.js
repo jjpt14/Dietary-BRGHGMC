@@ -157,10 +157,12 @@ exports.markPrepared = async (req, res) => {
 };
 exports.markServed = async (req, res) => {
   const { id } = req.params;
+  const { delivered_by } = req.body;
+  
   try {
     const result = await pool.query(
-      'UPDATE ons_logs SET served_time = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
-      [id]
+      'UPDATE ons_logs SET served_time = CURRENT_TIMESTAMP, delivered_by = $1 WHERE id = $2 RETURNING *',
+      [delivered_by, id]
     );
 
     if (result.rowCount === 0) {
@@ -169,7 +171,6 @@ exports.markServed = async (req, res) => {
 
     res.status(200).json({ message: "Served successfully" });
   } catch (err) {
-    console.error("Database Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };

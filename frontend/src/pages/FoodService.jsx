@@ -77,15 +77,22 @@ export default function FoodService({ currentUser }) {
   const fetchEvents = async () => {
     try {
       const res = await axios.get('http://localhost:5000/api/menu/events');
+      
+      // Get Today's date in YYYY-MM-DD format (Local Time)
       const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      const localToday = today.toLocaleDateString('en-CA'); // Outputs "YYYY-MM-DD"
+
       const todaysEvents = res.data.filter(e => {
         if (!e.event_date) return false;
-        return e.event_date.split('T')[0] === todayStr;
+        
+        // Ensure we are comparing "2026-04-21" to "2026-04-21"
+        const eventDateString = new Date(e.event_date).toLocaleDateString('en-CA');
+        return eventDateString === localToday;
       });
+
       setEvents(todaysEvents);
     } catch (err) {
-      console.error(err);
+      console.error("Event Fetch Error:", err);
     }
   };
 
@@ -133,17 +140,17 @@ export default function FoodService({ currentUser }) {
 
       // NEW: Map the completed ONS tasks so they match the standard format
       const servedOns = onsTasks.filter(t => t.served_time).map(t => ({
-        hospital_number: `ONS-${t.id}`,
-        name: `${t.surname}, ${t.first_name}`,
-        ward: t.ward,
-        room_number: t.room_number || '',
-        kind_of_diet: `${t.nutritional} (${t.scoops} Scoops)`,
-        status: 'Served',
-        serve_time: t.served_time,
-        delivered_by: 'Dietary Staff', 
-        isEvent: false,
-        isOns: true // Flag to identify it in the UI
-      }));
+  hospital_number: `ONS-${t.id}`,
+  name: `${t.surname}, ${t.first_name}`,
+  ward: t.ward,
+  room_number: t.room_number || '',
+  kind_of_diet: `${t.nutritional} (${t.scoops} Scoops)`,
+  status: 'Served',
+  serve_time: t.served_time,
+  delivered_by: t.delivered_by || 'Staff', 
+  isEvent: false,
+  isOns: true 
+}));
 
       // Merge all 3 types of completed items and sort by newest first
       const merged = [...servedPatients, ...dispatchedEvents, ...servedOns].sort((a, b) => 
@@ -333,26 +340,29 @@ export default function FoodService({ currentUser }) {
           </span>
         )}
         <button 
-          onClick={async (e) => {
-            e.stopPropagation();
-            try {
-              // Now calling the fixed PostgreSQL endpoint
-              await axios.patch(`http://localhost:5000/api/ons/mark-served/${task.id}`);
-              fetchOnsTasks(); // Refresh list to remove served item
-            } catch (err) {
-              console.error("Dispatch Error:", err);
-              alert("Failed to mark as served.");
-            }
-          }} 
-          style={{
-            ...serveActionBtn, 
-            opacity: task.dispatch_time ? 1 : 0.5, 
-            cursor: task.dispatch_time ? 'pointer' : 'not-allowed'
-          }}
-          disabled={!task.dispatch_time} 
-        >
-          Mark Served
-        </button>
+  onClick={async (e) => {
+    e.stopPropagation();
+    try {
+      const staffName = currentUser?.full_name || "Unknown Staff";
+      // UPDATED: Sending the staff name to the backend
+      await axios.patch(`http://localhost:5000/api/ons/mark-served/${task.id}`, {
+        delivered_by: staffName
+      });
+      fetchOnsTasks(); 
+    } catch (err) {
+      console.error("Dispatch Error:", err);
+      alert("Failed to mark as served.");
+    }
+  }} 
+  style={{
+    ...serveActionBtn, 
+    opacity: task.dispatch_time ? 1 : 0.5, 
+    cursor: task.dispatch_time ? 'pointer' : 'not-allowed'
+  }}
+  disabled={!task.dispatch_time} 
+>
+  Mark Served
+</button>
       </div>
     </div>
 ))}
@@ -376,9 +386,17 @@ export default function FoodService({ currentUser }) {
                     <div style={{ fontSize: '0.8rem' }}>at {event.completed_time}</div>
                   </div>
                 ) : (
-                  <button onClick={() => handleEventDelivery(event.id)} disabled={!isDone} style={{ ...serveActionBtn, backgroundColor: isDone ? '#f59e0b' : '#cbd5e1', cursor: isDone ? 'pointer' : 'not-allowed' }}>
-                    {isDone ? 'Mark as Served' : 'In Preparation'}
-                  </button>
+                  <button 
+  onClick={() => handleEventDelivery(event.id)} 
+  disabled={!isDone} 
+  style={{ 
+    ...serveActionBtn, 
+    backgroundColor: isDone ? '#f59e0b' : '#cbd5e1', 
+    cursor: isDone ? 'pointer' : 'not-allowed' 
+  }}
+>
+  {isDone ? 'Mark as Served' : 'In Preparation'}
+</button>
                 )}
               </div>
             </div>
