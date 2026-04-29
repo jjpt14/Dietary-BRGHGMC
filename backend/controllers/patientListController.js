@@ -3,20 +3,17 @@ const pool = require('../config/db');
 
 // Helper to determine if current delivery is late
 const MEAL_SCHEDULE = {
-  Breakfast: { start: "06:00", end: "09:00" }, // Matched to your 9AM threshold
-  Lunch:     { start: "11:00", end: "14:00" }, // Matched to your 2PM threshold
-  Dinner:    { start: "17:00", end: "20:00" }  // Matched to your 8PM threshold
+  Breakfast: { start: "06:00", end: "09:00" },
+  Lunch:     { start: "11:00", end: "14:00" },
+  Dinner:    { start: "17:00", end: "20:00" }
 };
 
 const getDeliveryStatus = (mealType) => {
   if (!MEAL_SCHEDULE[mealType]) return 'On Time';
-  
   const now = new Date();
   const currentTime = now.getHours() * 100 + now.getMinutes();
-  
   const [endH, endM] = MEAL_SCHEDULE[mealType].end.split(':').map(Number);
   const endTime = endH * 100 + endM;
-
   return (currentTime <= endTime) ? 'On Time' : 'Late Delivery';
 };
 
@@ -30,20 +27,18 @@ exports.getPatientList = async (req, res) => {
       [today]
     );
 
-    // 2. Fetch REAL Patients from your Database
-    const patientResult = await pool.query('SELECT * FROM patients');
+    // 2. Fetch Patients (Including the isolation_precaution column)
+    const patientResult = await pool.query('SELECT * FROM patients ORDER BY surname ASC');
     const dbPatients = patientResult.rows;
 
     // 3. Fetch Today's Meal Logs
     const localResult = await pool.query(
-  'SELECT * FROM meal_logs WHERE DATE(serve_time) = CURRENT_DATE'
-);
+      'SELECT * FROM meal_logs WHERE DATE(serve_time) = CURRENT_DATE'
+    );
 
-   // 4. Merge them
+    // 4. Merge Data
     const merged = dbPatients.map(p => {
-      // Find the log for this specific patient
       const log = localResult.rows.find(l => l.hospital_number === p.hospital_number);
-
       const matchingDietMenus = menuResult.rows.filter(m => 
         m.diet_type.trim().toLowerCase() === p.kind_of_diet.trim().toLowerCase()
       );
@@ -52,8 +47,8 @@ exports.getPatientList = async (req, res) => {
         ...p,
         name: `${p.surname}, ${p.first_name}`,
         status: log ? 'Served' : 'Pending',
-        serve_time: log ? log.serve_time : null,            // <-- ADD THIS
-        delivery_remark: log ? log.delivery_remark : null,  // <-- ADD THIS
+        serve_time: log ? log.serve_time : null,
+        delivery_remark: log ? log.delivery_remark : null,
         dietSpecificMenus: matchingDietMenus 
       };
     });
@@ -66,22 +61,17 @@ exports.getPatientList = async (req, res) => {
 };
 
 exports.servePatient = async (req, res) => {
-  // 1. Destructure the data from the frontend request
   const { hospitalNumber, mealType, status, deliveredBy } = req.body; 
-
   try {
-    // 2. Insert into the database
-    // Ensure the $5 matches the deliveredBy variable
     await pool.query(
       `INSERT INTO meal_logs 
-       (hospital_number, meal_type, status, serve_time, delivery_remark, delivered_by) 
-       VALUES ($1, $2, $3, NOW(), 'On Time', $4)`,
-      [hospitalNumber, mealType, status, deliveredBy] // $4 corresponds to deliveredBy
+        (hospital_number, meal_type, status, serve_time, delivery_remark, delivered_by) 
+        VALUES ($1, $2, $3, NOW(), 'On Time', $4)`,
+      [hospitalNumber, mealType, status, deliveredBy]
     );
-
     res.status(200).json({ message: "Delivery recorded successfully" });
   } catch (err) {
-    console.error("DATABASE ERROR:", err.message); // This will show the real error in your terminal
+    console.error("DATABASE ERROR:", err.message);
     res.status(500).json({ error: "Internal Server Error: " + err.message });
   }
 };
@@ -89,14 +79,15 @@ exports.servePatient = async (req, res) => {
 exports.addMockPatients = async (req, res) => {
   const { patients } = req.body;
   try {
-    // We use a transaction to ensure all or nothing is saved
     await pool.query('BEGIN');
     
     for (const p of patients) {
-      // FIXED: Added room_number, allergies, npo_status, remarks to match our updated database
       const query = `
-        INSERT INTO patients (hospital_number, first_name, surname, ward, age, religion, kind_of_diet, room_number, allergies, npo_status, remarks) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
+        INSERT INTO patients (
+          hospital_number, first_name, surname, ward, age, religion, 
+          kind_of_diet, room_number, allergies, npo_status, remarks, isolation_precaution
+        ) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
         ON CONFLICT (hospital_number) DO UPDATE 
         SET first_name = EXCLUDED.first_name, 
             surname = EXCLUDED.surname,
@@ -105,7 +96,8 @@ exports.addMockPatients = async (req, res) => {
             allergies = EXCLUDED.allergies,
             npo_status = EXCLUDED.npo_status,
             remarks = EXCLUDED.remarks,
-            kind_of_diet = EXCLUDED.kind_of_diet`;
+            kind_of_diet = EXCLUDED.kind_of_diet,
+            isolation_precaution = EXCLUDED.isolation_precaution`;
       
       await pool.query(query, [
         p.hospital_number, 
@@ -118,7 +110,8 @@ exports.addMockPatients = async (req, res) => {
         p.room_number,
         p.allergies,
         p.npo_status,
-        p.remarks
+        p.remarks,
+        p.isolation_precaution || 'None'
       ]);
     }
     
@@ -131,10 +124,8 @@ exports.addMockPatients = async (req, res) => {
   }
 };
 
-// PERMANENT CLEAR
 exports.clearPatients = async (req, res) => {
   try {
-    // We use TRUNCATE for a faster, cleaner wipe of the data
     await pool.query('TRUNCATE TABLE meal_logs, patients RESTART IDENTITY CASCADE');
     res.json({ message: "Database wiped clean for fresh testing." });
   } catch (err) {
@@ -152,7 +143,6 @@ exports.getEvents = async (req, res) => {
   }
 };
 
-// Save a new event
 exports.saveEvent = async (req, res) => {
   const { title, date, pax, mealType } = req.body;
   try {
@@ -167,10 +157,8 @@ exports.saveEvent = async (req, res) => {
 };
 
 exports.getPatientProfile = async (req, res) => {
-  const { id } = req.params; // This is the hospital_number
-  
+  const { id } = req.params;
   try {
-    // 1. Fetch Meal Deliveries
     const mealsResult = await pool.query(
       `SELECT meal_type, serve_time, delivery_remark, delivered_by 
        FROM meal_logs 
@@ -179,27 +167,18 @@ exports.getPatientProfile = async (req, res) => {
       [id]
     );
 
-    // 2. Fetch ONS/Enteral Deliveries
     const onsResult = await pool.query(
-      `SELECT 
-          nutritional AS formula_name, 
-          scoops AS volume, 
-          ons_criteria AS remarks, 
-          'System' AS prepared_by, 
-          dispatch_time, 
-          log_date AS created_at 
+      `SELECT nutritional AS formula_name, scoops AS volume, ons_criteria AS remarks, 
+       'System' AS prepared_by, dispatch_time, log_date AS created_at 
        FROM ons_logs 
        WHERE hospital_number = $1 AND dispatch_time IS NOT NULL
        ORDER BY dispatch_time DESC`,
       [id]
     );
 
-    // 3. MOCK HIS/EMR API DATA (For Presentation Purposes)
-    // This fills out the top grid of your UI until the real system is connected
-    const isFemale = Math.random() > 0.5;
     const mockVitals = {
       birth_date: `19${Math.floor(50 + Math.random() * 40)}-0${Math.floor(1 + Math.random() * 9)}-1${Math.floor(1 + Math.random() * 8)}`,
-      sex: isFemale ? "Female" : "Male",
+      sex: Math.random() > 0.5 ? "Female" : "Male",
       height: `${Math.floor(150 + Math.random() * 30)} cm`,
       weight: `${Math.floor(50 + Math.random() * 40)} kg`,
       bp: `${Math.floor(110 + Math.random() * 30)}/${Math.floor(70 + Math.random() * 20)}`,
@@ -208,14 +187,32 @@ exports.getPatientProfile = async (req, res) => {
       resp: `${Math.floor(14 + Math.random() * 6)} cpm`
     };
 
-    // 4. Send everything back to the frontend
     res.json({
-      ...mockVitals, // Spreads the mock vitals into the response
+      ...mockVitals,
       meal_history: mealsResult.rows,
       ons_history: onsResult.rows
     });
-    
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+};
+
+// Update Isolation Precaution (Used by Nurses)
+exports.updatePrecaution = async (req, res) => {
+    const { hospitalNumber } = req.params;
+    const { isolation_precaution } = req.body;
+
+    const sql = "UPDATE patients SET isolation_precaution = $1 WHERE hospital_number = $2";
+
+    try {
+        const result = await pool.query(sql, [isolation_precaution, hospitalNumber]);
+        
+        if (result.rowCount === 0) {
+            return res.status(404).json({ message: "Patient not found" });
+        }
+        res.status(200).json({ message: "Update successful" });
+    } catch (err) {
+        console.error("DB ERROR:", err.message);
+        res.status(500).json({ error: err.message });
+    }
 };

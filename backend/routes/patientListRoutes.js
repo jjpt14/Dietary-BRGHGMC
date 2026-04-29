@@ -28,5 +28,8 @@ router.patch('/menu/status/:id', menuController.updateMenuStatus);
 
 router.get('/patients/:id/profile', patientListController.getPatientProfile);
 
+// PATCH http://localhost:5000/api/patients/:hospitalNumber/precaution
+router.patch('/patients/:hospitalNumber/precaution', patientListController.updatePrecaution);
+
 
 module.exports = router;

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   Search, Info, Filter, Utensils, Printer, FileText, 
   LayoutList, CheckCircle2, Clock, Pill, AlertCircle, 
-  Calendar, Star, ClipboardList
+  Calendar, Star, ClipboardList, ShieldAlert
 } from 'lucide-react';
 
 export default function FoodService({ currentUser }) {
@@ -14,7 +14,7 @@ export default function FoodService({ currentUser }) {
   const [filteredPatients, setFilteredPatients] = useState([]);
   const [events, setEvents] = useState([]); 
   const [menus, setMenus] = useState([]);
-  const [onsTasks, setOnsTasks] = useState([]); // <-- ONS State added here
+  const [onsTasks, setOnsTasks] = useState([]);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -27,14 +27,12 @@ export default function FoodService({ currentUser }) {
   // Time & Session Logic
   const getCurrentMeal = () => {
     const hour = new Date().getHours();
-    
     if (hour >= 5 && hour < 10) return "Breakfast";
     if (hour >= 10 && hour < 11) return "AM Snack";
     if (hour >= 11 && hour < 15) return "Lunch"; 
     if (hour >= 15 && hour < 17) return "PM Snack";
     if (hour >= 17 && hour < 21) return "Dinner";
     if (hour >= 21 || hour < 5) return "Midnight Snack";
-    
     return "Breakfast"; 
   };
 
@@ -62,7 +60,6 @@ export default function FoodService({ currentUser }) {
   const timeRange = getMealTimeRange(currentMeal);
   const isLate = checkIsLate(currentMeal);
 
-  // Fetching Functions declared before useEffect
   const fetchPatients = async () => {
     try {
       const res = await axios.get('http://localhost:5000/api/patients');
@@ -77,15 +74,11 @@ export default function FoodService({ currentUser }) {
   const fetchEvents = async () => {
     try {
       const res = await axios.get('http://localhost:5000/api/menu/events');
-      
-      // Get Today's date in YYYY-MM-DD format (Local Time)
       const today = new Date();
-      const localToday = today.toLocaleDateString('en-CA'); // Outputs "YYYY-MM-DD"
+      const localToday = today.toLocaleDateString('en-CA'); 
 
       const todaysEvents = res.data.filter(e => {
         if (!e.event_date) return false;
-        
-        // Ensure we are comparing "2026-04-21" to "2026-04-21"
         const eventDateString = new Date(e.event_date).toLocaleDateString('en-CA');
         return eventDateString === localToday;
       });
@@ -118,7 +111,7 @@ export default function FoodService({ currentUser }) {
     fetchPatients(); 
     fetchEvents(); 
     fetchMenus(); 
-    fetchOnsTasks(); // <-- ONS fetch integrated here
+    fetchOnsTasks();
     setCardMeal(getCurrentMeal());
   }, []);
 
@@ -138,21 +131,23 @@ export default function FoodService({ currentUser }) {
         isEvent: true 
       }));
 
-      // NEW: Map the completed ONS tasks so they match the standard format
-      const servedOns = onsTasks.filter(t => t.served_time).map(t => ({
-  hospital_number: `ONS-${t.id}`,
-  name: `${t.surname}, ${t.first_name}`,
-  ward: t.ward,
-  room_number: t.room_number || '',
-  kind_of_diet: `${t.nutritional} (${t.scoops} Scoops)`,
-  status: 'Served',
-  serve_time: t.served_time,
-  delivered_by: t.delivered_by || 'Staff', 
-  isEvent: false,
-  isOns: true 
-}));
+      const servedOns = onsTasks.filter(t => t.served_time).map(t => {
+        const patientData = patients.find(p => p.hospital_number === t.hospital_number);
+        return {
+          hospital_number: `ONS-${t.id}`,
+          name: `${t.surname}, ${t.first_name}`,
+          ward: t.ward,
+          room_number: t.room_number || '',
+          kind_of_diet: `${t.nutritional} (${t.scoops} Scoops)`,
+          isolation_precaution: patientData?.isolation_precaution || 'None',
+          status: 'Served',
+          serve_time: t.served_time,
+          delivered_by: t.delivered_by || 'Staff', 
+          isEvent: false,
+          isOns: true 
+        };
+      });
 
-      // Merge all 3 types of completed items and sort by newest first
       const merged = [...servedPatients, ...dispatchedEvents, ...servedOns].sort((a, b) => 
         new Date(b.serve_time) - new Date(a.serve_time)
       );
@@ -165,7 +160,6 @@ export default function FoodService({ currentUser }) {
 
     let result = patients;
     
-    // Apply Filters (Search, Ward, Diet)
     if (searchTerm) {
       result = result.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.hospital_number.includes(searchTerm));
     }
@@ -224,8 +218,20 @@ export default function FoodService({ currentUser }) {
               position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0;
             }
             .no-print { display: none !important; } 
-            .diet-card-grid { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; gap: 15px !important; }
-            .diet-card { border: 1px solid #000 !important; page-break-inside: avoid; background-color: white !important; }
+            
+            /* Simplified Print Grid */
+            .diet-card-grid { 
+              display: grid !important; 
+              grid-template-columns: repeat(3, 1fr) !important; 
+              gap: 10px !important; 
+            }
+            .diet-card { 
+              border: 1px solid #000 !important; 
+              page-break-inside: avoid; 
+              background-color: white !important;
+              color: black !important;
+              font-family: Arial, sans-serif !important;
+            }
           }
         `}
       </style>
@@ -260,7 +266,6 @@ export default function FoodService({ currentUser }) {
           <input style={searchFieldStyle} placeholder="Search by name or ID..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
         
-        {/* Only show Ward/Diet filters for relevant tabs */}
         {['meals', 'ons', 'cards'].includes(activeTab) && (
           <div style={{ display: 'flex', gap: '10px', flex: '1 1 400px', flexWrap: 'wrap' }}>
             <select style={selectStyle} value={wardFilter} onChange={(e) => setWardFilter(e.target.value)}>
@@ -278,7 +283,7 @@ export default function FoodService({ currentUser }) {
         
         {/* 1. MEALS TAB */}
         {activeTab === 'meals' && filteredPatients.map(p => (
-          <div key={p.hospital_number} onClick={() => setSelectedPatient(p)} style={patientCardStyle(p.status, activeTab)}>
+          <div key={p.hospital_number} onClick={() => setSelectedPatient(p)} style={patientCardStyle(p.status, activeTab, p.isolation_precaution)}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
               <div style={avatarStyle}><strong>{p.ward.charAt(0)}</strong></div>
               <div>
@@ -287,85 +292,81 @@ export default function FoodService({ currentUser }) {
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+              
+              {p.isolation_precaution && p.isolation_precaution !== 'None' && (
+                <span style={precautionBadgeStyle(p.isolation_precaution)}>
+                  <ShieldAlert size={14} /> IPC: {p.isolation_precaution}
+                </span>
+              )}
+
               <span style={dietBadgeStyle(p.kind_of_diet)}>{p.kind_of_diet}</span>
               <button style={serveActionBtn}>Serve Now</button>
             </div>
           </div>
         ))}
 
-        {/* 2. ONS & TF TAB (Connected to ONS API) */}
-        {/* Inside FoodService.jsx -> ONS & TF Tab Mapping */}
-{activeTab === 'ons' && onsTasks
-  .filter(t => !t.served_time) //
-  .filter(t => (wardFilter === 'All' || t.ward === wardFilter))
-  .map(task => (
-    <div key={task.id} style={patientCardStyle('Pending', 'ons')}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-        <div style={{...avatarStyle, backgroundColor: '#f0fdf4'}}>
-          <Pill size={20} color="rgb(61, 146, 95)" />
-        </div>
-        <div>
-          <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b' }}>
-            {task.ward} - {task.nutritional}
-          </div>
-          <div style={{ color: '#64748b' }}>
-            {task.surname}, {task.first_name} | {task.scoops} Scoops
-          </div>
-        </div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-        {/* Updated Badge: Changed from "Prepared by Kitchen" to "READY" */}
-        {task.dispatch_time ? (
-          <span style={{ 
-            backgroundColor: '#dcfce7', 
-            color: '#15803d', 
-            padding: '4px 10px', 
-            borderRadius: '6px', 
-            fontSize: '0.75rem', 
-            fontWeight: 'bold' 
-          }}>
-            READY
-          </span>
-        ) : (
-          <span style={{ 
-            backgroundColor: '#fffbeb', 
-            color: '#b45309', 
-            padding: '4px 10px', 
-            borderRadius: '6px', 
-            fontSize: '0.75rem', 
-            fontWeight: 'bold', 
-            border: '1px solid #fde68a' 
-          }}>
-            AWAITING KITCHEN
-          </span>
-        )}
-        <button 
-  onClick={async (e) => {
-    e.stopPropagation();
-    try {
-      const staffName = currentUser?.full_name || "Unknown Staff";
-      // UPDATED: Sending the staff name to the backend
-      await axios.patch(`http://localhost:5000/api/ons/mark-served/${task.id}`, {
-        delivered_by: staffName
-      });
-      fetchOnsTasks(); 
-    } catch (err) {
-      console.error("Dispatch Error:", err);
-      alert("Failed to mark as served.");
-    }
-  }} 
-  style={{
-    ...serveActionBtn, 
-    opacity: task.dispatch_time ? 1 : 0.5, 
-    cursor: task.dispatch_time ? 'pointer' : 'not-allowed'
-  }}
-  disabled={!task.dispatch_time} 
->
-  Mark Served
-</button>
-      </div>
-    </div>
-))}
+        {/* 2. ONS & TF TAB */}
+        {activeTab === 'ons' && onsTasks
+          .filter(t => !t.served_time)
+          .filter(t => (wardFilter === 'All' || t.ward === wardFilter))
+          .map(task => {
+            const patientData = patients.find(p => p.hospital_number === task.hospital_number);
+            const isolation = patientData?.isolation_precaution;
+
+            return (
+              <div key={task.id} style={patientCardStyle('Pending', 'ons', isolation)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{...avatarStyle, backgroundColor: '#f0fdf4'}}>
+                    <Pill size={20} color="rgb(61, 146, 95)" />
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b' }}>
+                      {task.ward} - {task.nutritional}
+                    </div>
+                    <div style={{ color: '#64748b' }}>
+                      {task.surname}, {task.first_name} | {task.scoops} Scoops
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                  
+                  {isolation && isolation !== 'None' && (
+                    <span style={precautionBadgeStyle(isolation)}>
+                      <ShieldAlert size={14} /> IPC: {isolation}
+                    </span>
+                  )}
+
+                  {task.dispatch_time ? (
+                    <span style={{ backgroundColor: '#dcfce7', color: '#15803d', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                      READY
+                    </span>
+                  ) : (
+                    <span style={{ backgroundColor: '#fffbeb', color: '#b45309', padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold', border: '1px solid #fde68a' }}>
+                      AWAITING KITCHEN
+                    </span>
+                  )}
+                  <button 
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        const staffName = currentUser?.full_name || "Unknown Staff";
+                        await axios.patch(`http://localhost:5000/api/ons/mark-served/${task.id}`, { delivered_by: staffName });
+                        fetchOnsTasks(); 
+                      } catch (err) {
+                        console.error("Dispatch Error:", err);
+                        alert("Failed to mark as served.");
+                      }
+                    }} 
+                    style={{ ...serveActionBtn, opacity: task.dispatch_time ? 1 : 0.5, cursor: task.dispatch_time ? 'pointer' : 'not-allowed' }}
+                    disabled={!task.dispatch_time} 
+                  >
+                    Mark Served
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
         {/* 3. SPECIAL FUNCTIONS TAB */}
         {activeTab === 'events' && events.map(event => {
           const isDone = event.is_completed === true;
@@ -387,23 +388,19 @@ export default function FoodService({ currentUser }) {
                   </div>
                 ) : (
                   <button 
-  onClick={() => handleEventDelivery(event.id)} 
-  disabled={!isDone} 
-  style={{ 
-    ...serveActionBtn, 
-    backgroundColor: isDone ? '#f59e0b' : '#cbd5e1', 
-    cursor: isDone ? 'pointer' : 'not-allowed' 
-  }}
->
-  {isDone ? 'Mark as Served' : 'In Preparation'}
-</button>
+                    onClick={() => handleEventDelivery(event.id)} 
+                    disabled={!isDone} 
+                    style={{ ...serveActionBtn, backgroundColor: isDone ? '#f59e0b' : '#cbd5e1', cursor: isDone ? 'pointer' : 'not-allowed' }}
+                  >
+                    {isDone ? 'Mark as Served' : 'In Preparation'}
+                  </button>
                 )}
               </div>
             </div>
           );
         })}
 
-        {/* 4. COMPLETED HISTORY (MERGED) */}
+        {/* 4. COMPLETED HISTORY */}
         {activeTab === 'completed' && filteredPatients.map(p => (
           <div key={p.hospital_number} style={{ 
             ...patientCardStyle('Served', 'completed'), 
@@ -421,24 +418,29 @@ export default function FoodService({ currentUser }) {
                 </div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ color: p.isOns ? '#1d4ed8' : '#166534', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                {p.isEvent ? 'EVENT DELIVERED' : p.isOns ? 'ONS DISPATCHED' : 'SERVED'}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              {p.isolation_precaution && p.isolation_precaution !== 'None' && (
+                <span style={precautionBadgeStyle(p.isolation_precaution)}>
+                  IPC: {p.isolation_precaution}
+                </span>
+              )}
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ color: p.isOns ? '#1d4ed8' : '#166534', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                  {p.isEvent ? 'EVENT DELIVERED' : p.isOns ? 'ONS DISPATCHED' : 'SERVED'}
+                </div>
+                <div style={{ fontWeight: 'bold' }}>at {new Date(p.serve_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Staff: {p.delivered_by}</div>
               </div>
-              <div style={{ fontWeight: 'bold' }}>at {new Date(p.serve_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
-              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Staff: {p.delivered_by}</div>
             </div>
           </div>
         ))}
         
-        {/* Empty State for Meals/Cards */}
         {filteredPatients.length === 0 && activeTab === 'meals' && (
           <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', background: 'white', borderRadius: '12px' }}>
             No patients match your current search or filters.
           </div>
         )}
 
-        {/* Empty State for ONS */}
         {onsTasks.length === 0 && activeTab === 'ons' && (
           <div style={{ padding: '30px', textAlign: 'center', color: '#64748b', background: 'white', borderRadius: '12px' }}>
             No ONS tasks to dispatch currently.
@@ -447,7 +449,7 @@ export default function FoodService({ currentUser }) {
       </div>
 
       {/* ========================================== */}
-      {/* 5. PRINT CARDS TAB */}
+      {/* 5. PRINT CARDS TAB (DISGUISED IPC)         */}
       {/* ========================================== */}
       {activeTab === 'cards' && (
         <div className="printable-area">
@@ -469,7 +471,7 @@ export default function FoodService({ currentUser }) {
                    </div>
                    <div style={{ color: '#64748b', fontSize: '0.85rem' }}>
                       <Info size={14} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }}/>
-                      Showing {filteredPatients.length} cards based on your filters above.
+                      Showing {filteredPatients.length} cards based on your filters.
                    </div>
                  </div>
                </div>
@@ -482,68 +484,79 @@ export default function FoodService({ currentUser }) {
            {/* Diet Card Grid for Printing */}
            <div className="diet-card-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
              {filteredPatients.map(p => {
-               // Get exact colors from the matrix mapping
-               const currentDietStyle = dietBadgeStyle(p.kind_of_diet);
-               const isHighlighted = p.kind_of_diet.toUpperCase() !== 'REGULAR';
+               const hasPrecaution = p.isolation_precaution && p.isolation_precaution !== 'None';
+               const dietStyle = dietBadgeStyle(p.kind_of_diet);
+               
+               // Subtle mapping for Kitchen Staff to know what disposables to use
+               const subtleEmoji = {
+                 'Contact': '🌸',
+                 'Droplet': '🌼',
+                 'Airborne': '🍃',
+                 'Contact & Droplet': '🌺'
+               }[p.isolation_precaution] || '✨';
 
                return (
-                 <div key={p.hospital_number} className="diet-card" style={{ backgroundColor: 'white', border: '1px solid #000', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                 <div key={p.hospital_number} className="diet-card" style={{ backgroundColor: 'white', border: '1px solid #000', padding: '15px', display: 'flex', flexDirection: 'column', gap: '10px', position: 'relative' }}>
                    
-                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem' }}>
                      <div>
-                       <div style={{ fontWeight: 'bold' }}>Patient Name:</div>
-                       <div>{p.name}</div>
+                       <div style={{ fontWeight: 'bold' }}>Name:</div>
+                       <div style={{ fontSize: '1rem', fontWeight: 'bold' }}>{p.name}</div>
                      </div>
+                     <div style={{ textAlign: 'right' }}>
+                       <div style={{ fontWeight: 'bold' }}>Ward/Rm:</div>
+                       <div>{p.ward} - {p.room_number || p.bed_no}</div>
+                     </div>
+                   </div>
+
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px dotted #000', borderBottom: '1px dotted #000', padding: '8px 0' }}>
                      <div>
-                       <div style={{ fontWeight: 'bold' }}>WARD:</div>
-                       <div>{p.ward}</div>
+                       <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Date:</div>
+                       <div style={{ fontSize: '0.85rem' }}>{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                     </div>
+                     <div style={{ textAlign: 'right' }}>
+                       {/* COLOR CODED DIET HIGHLIGHT */}
+                       <div style={{ 
+                         backgroundColor: dietStyle.backgroundColor, 
+                         color: dietStyle.color, 
+                         border: dietStyle.border, 
+                         padding: '4px 8px', 
+                         borderRadius: '4px', 
+                         fontWeight: '900', 
+                         fontSize: '1.1rem', 
+                         textTransform: 'uppercase',
+                         display: 'inline-block'
+                       }}>
+                         {p.kind_of_diet}
+                       </div>
+                       <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginTop: '4px' }}>{cardMeal.toUpperCase()}</div>
                      </div>
                    </div>
 
+                   {/* Disguised IPC Table - Looks like Eco-friendly option to the patient */}
                    <div>
-                     <div style={{ fontWeight: 'bold' }}>Date:</div>
-                     <div>{new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</div>
-                   </div>
-
-                   <div>
-                     <div style={{ 
-                       fontWeight: 'bold', 
-                       fontSize: '1.2rem', 
-                       // Apply exact background and text color from the Matrix
-                       backgroundColor: isHighlighted ? currentDietStyle.backgroundColor : 'transparent', 
-                       color: isHighlighted ? currentDietStyle.color : '#000',
-                       display: 'inline-block',
-                       padding: isHighlighted ? '2px 8px' : '0',
-                       borderRadius: '4px'
-                     }}>
-                       {p.kind_of_diet.toUpperCase()}
-                     </div>
-                     <div style={{ fontWeight: 'bold' }}>{cardMeal.toUpperCase()}</div>
-                   </div>
-
-                   <div>
-                     <div style={{ fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '5px' }}>Utensils:</div>
-                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                     <div style={{ fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '4px' }}>Service Protocol:</div>
+                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
                        <tbody>
                          <tr>
-                           <td style={{ border: '1px solid #000', padding: '4px' }}>6 compartment tray</td>
+                           <td style={{ border: '1px solid #000', padding: '4px', fontWeight: hasPrecaution ? 'bold' : 'normal' }}>
+                             {hasPrecaution ? `Eco-Care Tray ${subtleEmoji}` : 'Standard Tray & Cover'}
+                           </td>
                            <td style={{ border: '1px solid #000', padding: '4px', width: '30px' }}></td>
                          </tr>
                          <tr>
-                           <td style={{ border: '1px solid #000', padding: '4px' }}>6 compartment cover</td>
-                           <td style={{ border: '1px solid #000', padding: '4px' }}></td>
-                         </tr>
-                         <tr>
-                           <td style={{ border: '1px solid #000', padding: '4px' }}>Stainless Tray</td>
+                           <td style={{ border: '1px solid #000', padding: '4px', fontWeight: hasPrecaution ? 'bold' : 'normal' }}>
+                             {hasPrecaution ? `Wrapped Pack ${subtleEmoji}` : 'Standard Silverware'}
+                           </td>
                            <td style={{ border: '1px solid #000', padding: '4px' }}></td>
                          </tr>
                        </tbody>
                      </table>
                    </div>
 
-                   <div style={{ marginTop: 'auto' }}>
-                     <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Checked by:</div>
-                     <div style={{ borderBottom: '1px solid #000', width: '150px', height: '20px', marginTop: '10px' }}></div>
+                   <div style={{ marginTop: 'auto', display: 'flex', gap: '10px', alignItems: 'flex-end', paddingTop: '10px' }}>
+                     <div style={{ fontWeight: 'bold', fontSize: '0.85rem' }}>Checked by:</div>
+                     <div style={{ borderBottom: '1px solid #000', flex: 1, height: '10px' }}></div>
                    </div>
 
                  </div>
@@ -559,6 +572,7 @@ export default function FoodService({ currentUser }) {
           m.diet_type === selectedPatient.kind_of_diet && 
           m.meal_type === currentMeal
         );
+        const hasPrecaution = selectedPatient.isolation_precaution && selectedPatient.isolation_precaution !== 'None';
 
         return (
           <div style={modalOverlay}>
@@ -573,7 +587,15 @@ export default function FoodService({ currentUser }) {
                   <div style={{ color: '#64748b', fontSize: '0.85rem', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Patient Details</div>
                   <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#0f172a' }}>{selectedPatient.name}</div>
                   <div style={{ color: '#475569', marginBottom: '10px' }}>{selectedPatient.ward} - {selectedPatient.room_number || selectedPatient.bed_no}</div>
-                  <span style={dietBadgeStyle(selectedPatient.kind_of_diet)}>{selectedPatient.kind_of_diet}</span>
+                  
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={dietBadgeStyle(selectedPatient.kind_of_diet)}>{selectedPatient.kind_of_diet}</span>
+                    {hasPrecaution && (
+                      <span style={precautionBadgeStyle(selectedPatient.isolation_precaution)}>
+                        <ShieldAlert size={12} /> IPC: {selectedPatient.isolation_precaution}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ backgroundColor: '#f0fdf4', padding: '15px', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '20px' }}>
@@ -605,7 +627,14 @@ export default function FoodService({ currentUser }) {
                   )}
                 </div>
 
-                <div style={{ display: 'flex', gap: '15px', marginTop: '25px' }}>
+                {hasPrecaution && (
+                  <div style={{ padding: '12px', backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', color: '#dc2626', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', gap: '8px', marginBottom: '20px' }}>
+                    <ShieldAlert size={18} style={{flexShrink: 0}} />
+                    Verify that disposable containers and IPC protocols are used for this {selectedPatient.isolation_precaution} case before dispatching.
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '15px' }}>
                   <button onClick={() => setSelectedPatient(null)} style={{ flex: 1, padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', backgroundColor: 'white', fontWeight: 'bold', color: '#475569' }}>
                     Cancel
                   </button>
@@ -623,6 +652,21 @@ export default function FoodService({ currentUser }) {
 }
 
 // ================= STYLES =================
+
+const precautionBadgeStyle = (type) => {
+  let colors = { bg: '#fff7ed', text: '#ea580c', border: '#ffedd5' }; 
+  
+  if (type && type.includes('Contact')) colors = { bg: '#fef2f2', text: '#dc2626', border: '#fee2e2' };
+  if (type && type.includes('Airborne')) colors = { bg: '#f0f9ff', text: '#0284c7', border: '#e0f2fe' };
+
+  return {
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
+    backgroundColor: colors.bg, color: colors.text, border: `1px solid ${colors.border}`,
+    padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '900',
+    letterSpacing: '0.02em', textTransform: 'uppercase'
+  };
+};
+
 const dietBadgeStyle = (diet) => {
   const colors = {
     'Regular': { bg: '#FFFFFF', text: '#000', b: '#cbd5e1' },
@@ -646,13 +690,18 @@ const activeEventTabStyle = { background: '#f59e0b', color: 'white', border: 'no
 const inactiveTabStyle = { background: 'white', color: '#64748b', border: '1px solid #cbd5e1', padding: '12px 20px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' };
 const tipsContainer = { backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px 20px', borderRadius: '8px' };
 
-// Added flexWrap and alignItems to prevent overlap
 const filterBarContainer = { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '15px', marginBottom: '25px', background: 'white', padding: '15px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' };
 const searchFieldStyle = { width: '100%', boxSizing: 'border-box', padding: '12px 12px 12px 40px', borderRadius: '8px', border: '1px solid #e2e8f0', outline: 'none' };
 const searchIconStyle = { position: 'absolute', left: '14px', top: '14px', color: '#94a3b8' };
 const selectStyle = { padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', background: 'white', flex: 1, minWidth: '150px' };
 
-const patientCardStyle = (s, t) => ({ backgroundColor: 'white', padding: '20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', borderLeft: `8px solid ${t === 'completed' ? '#cbd5e0' : 'rgb(61, 146, 95)'}`, cursor: 'pointer' });
+const patientCardStyle = (s, t, isolation) => ({ 
+  backgroundColor: 'white', padding: '20px', borderRadius: '12px', 
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+  boxShadow: '0 2px 4px rgba(0,0,0,0.05)', 
+  borderLeft: `8px solid ${t === 'completed' ? '#cbd5e0' : (isolation && isolation !== 'None' ? '#dc2626' : 'rgb(61, 146, 95)')}`, 
+  cursor: 'pointer' 
+});
 const avatarStyle = { backgroundColor: '#f1f5f9', width: '45px', height: '45px', display: 'flex', justifyContent: 'center', alignItems: 'center', borderRadius: '50%' };
 const serveActionBtn = { backgroundColor: 'rgb(61, 146, 95)', color: 'white', border: 'none', padding: '8px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' };
 const modalOverlay = { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15, 23, 42, 0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 };
